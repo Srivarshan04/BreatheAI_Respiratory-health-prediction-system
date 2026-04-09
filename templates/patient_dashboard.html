@@ -1,0 +1,571 @@
+{% extends 'base.html' %}
+{% block title %}Patient Dashboard{% endblock %}
+{% block content %}
+<div class="card shadow p-4">
+    <h2 class="mb-3">Welcome, {{ user.username }} 👋</h2>
+    <p><strong>Role:</strong> Patient</p>
+
+    <!-- AQI Status -->
+    <div id="aqi-status" class="alert alert-info">
+        🌍 Fetching AQI data...
+    </div>
+
+    <!-- Search AQI by City -->
+    <div class="mt-3">
+        <input type="text" id="city-search" placeholder="Enter city name" class="form-control" style="max-width:300px; display:inline-block;">
+        <button id="search-btn" class="btn btn-primary mt-2">Search AQI</button>
+        <div id="search-result" class="mt-2 alert alert-secondary" style="display:none;"></div>
+    </div>
+
+    <!-- ================= New AQI Forecast Table ================= -->
+    <div id="forecast-section" class="mt-4" style="display:none;">
+        <h4>📅 AQI Forecast (Today + Next 6 Days)</h4>
+        <table class="table table-bordered" id="forecast-table">
+            <thead>
+                <tr>
+                    <th>Day</th>
+                    <th>Predicted AQI</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Forecast will be populated here -->
+            </tbody>
+        </table>
+    </div>
+    <!-- ============================================================ -->
+
+    <!-- Health Tips -->
+    <div class="alert alert-warning mt-3">
+        💡 Health Tip: Stay indoors if AQI is above 100. Use an air purifier if possible.
+    </div>
+
+    <!-- ================= UPDATED Symptom Logging Form ================= -->
+    <h4 class="mt-4">📝 Log Your Symptoms & Get Suggestion</h4>
+    <form id="symptomForm">
+        <div class="row g-2">
+            <div class="col-md-6">
+                <label for="disease">Disease</label>
+                <input id="disease" name="disease" class="form-control" placeholder="e.g., COPD, Asthma" required>
+            </div>
+
+            <div class="col-md-6">
+                <label for="cough">Cough Severity (1–5)</label>
+                <select id="cough" name="cough_severity" class="form-control" required>
+                    <option value="1">1 - Very Mild</option>
+                    <option value="2">2 - Mild</option>
+                    <option value="3" selected>3 - Moderate</option>
+                    <option value="4">4 - Severe</option>
+                    <option value="5">5 - Very Severe</option>
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label for="wheezing">Wheezing Severity (1–5)</label>
+                <select id="wheezing" name="wheezing_severity" class="form-control" required>
+                    <option value="1">1 - Very Mild</option>
+                    <option value="2">2 - Mild</option>
+                    <option value="3" selected>3 - Moderate</option>
+                    <option value="4">4 - Severe</option>
+                    <option value="5">5 - Very Severe</option>
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label for="breath">Breathlessness Severity (1–5)</label>
+                <select id="breath" name="breathlessness_severity" class="form-control" required>
+                    <option value="1">1 - Very Mild</option>
+                    <option value="2">2 - Mild</option>
+                    <option value="3" selected>3 - Moderate</option>
+                    <option value="4">4 - Severe</option>
+                    <option value="5">5 - Very Severe</option>
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label for="chest">Chest Pain Severity (1–5)</label>
+                <select id="chest" name="chest_pain_severity" class="form-control" required>
+                    <option value="1">1 - Very Mild</option>
+                    <option value="2">2 - Mild</option>
+                    <option value="3" selected>3 - Moderate</option>
+                    <option value="4">4 - Severe</option>
+                    <option value="5">5 - Very Severe</option>
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label for="throat">Throat Irritation Severity (1–5)</label>
+                <select id="throat" name="throat_irritation_severity" class="form-control" required>
+                    <option value="1">1 - Very Mild</option>
+                    <option value="2">2 - Mild</option>
+                    <option value="3" selected>3 - Moderate</option>
+                    <option value="4">4 - Severe</option>
+                    <option value="5">5 - Very Severe</option>
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label for="fatigue">Fatigue Severity (1–5)</label>
+                <select id="fatigue" name="fatigue_severity" class="form-control" required>
+                    <option value="1">1 - Very Mild</option>
+                    <option value="2">2 - Mild</option>
+                    <option value="3" selected>3 - Moderate</option>
+                    <option value="4">4 - Severe</option>
+                    <option value="5">5 - Very Severe</option>
+                </select>
+            </div>
+
+            <div class="col-md-12">
+                <label for="description">Additional Description (optional)</label>
+                <textarea id="description" name="description" class="form-control" rows="2" placeholder="More details..."></textarea>
+            </div>
+
+            <!-- lat/lon kept as hidden fields and are filled by geolocation code below -->
+            <input type="hidden" name="lat" id="hidden_lat">
+            <input type="hidden" name="lon" id="hidden_lon">
+
+            <!-- hidden AQI field named exactly 'aqi' so backend receives it -->
+            <input type="hidden" name="aqi" id="hidden_aqi" value="{{ last_aqi if last_aqi is not none else '' }}">
+
+            <div class="col-12 mt-2">
+                <button id="submitSymptomBtn" type="submit" class="btn btn-success">Submit & Get Suggestion</button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Suggestion / Prediction result area -->
+    <div id="predictionResult" class="mt-3" style="display:none;">
+      <div class="card">
+        <div class="card-body">
+          <h6 id="pred_label"></h6>
+          <p id="pred_prob"></p>
+          <div id="pred_suggestion" class="alert" role="alert"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="symptom-message" class="mt-2"></div>
+
+    <!-- My Symptoms Table -->
+    <h4 class="mt-4">📜 My Symptoms</h4>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Severity</th>
+                <th>Location</th>
+            </tr>
+        </thead>
+        <tbody id="symptomTableBody">
+            <tr><td colspan="4">Loading...</td></tr>
+        </tbody>
+    </table>
+
+    <!-- AQI Graph -->
+    <h5 class="mt-4">📊 AQI Trend (Past 7 Days)</h5>
+    <canvas id="aqiChart" height="100"></canvas>
+
+    <!-- Navigation -->
+    <div class="mt-4">
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">Logout</a>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+/* ---------- Single robust get_aqi handler ---------- */
+/* Usage:
+   handleGetAqiFetch(fetch(`/get_aqi?lat=${lat}&lon=${lon}`), null)
+   handleGetAqiFetch(fetch(`/get_aqi?city=${encodeURIComponent(city)}`), city)
+*/
+async function handleGetAqiFetch(fetchPromise, displayCityName) {
+  try {
+    const res = await fetchPromise;
+    const rawText = await res.text();
+    console.log("RAW /get_aqi response text:", rawText);
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      console.error("Failed parsing JSON from /get_aqi:", parseErr);
+      document.getElementById("aqi-status").innerHTML = "❌ Unexpected server response (not JSON)";
+      if (displayCityName) {
+        document.getElementById("search-result").style.display = "block";
+        document.getElementById("search-result").innerHTML = "❌ Unexpected server response (not JSON)";
+      }
+      return null;
+    }
+
+    console.log("PARSED /get_aqi JSON:", data);
+
+    if (data.error) {
+      const msg = data.error + (data.details ? " — " + JSON.stringify(data.details) : "");
+      document.getElementById("aqi-status").innerHTML = `❌ ${msg}`;
+      if (displayCityName) {
+        document.getElementById("search-result").style.display = "block";
+        document.getElementById("search-result").innerHTML = `❌ ${msg}`;
+      }
+      return data;
+    }
+
+    // Primary current AQI value (compatibility: read multiple keys)
+    const aqi_value = (data.current_aqi !== undefined) ? data.current_aqi
+                     : (data.aqi_value !== undefined) ? data.aqi_value
+                     : (data.data && data.data.aqi ? data.data.aqi : null);
+
+    // Predicted/tomorrow AQI (compatibility across keys)
+    const predicted_aqi = (data.predicted_aqi !== undefined) ? data.predicted_aqi
+                        : (data.next_day_aqi !== undefined) ? data.next_day_aqi
+                        : (data.tomorrow_aqi !== undefined) ? data.tomorrow_aqi
+                        : null;
+
+    const show_prediction = (data.show_prediction !== undefined) ? !!data.show_prediction : (predicted_aqi !== null);
+
+    // components fallback
+    const components = data.components || (data.data && data.data.iaqi ? (() => {
+      const ia = data.data.iaqi;
+      return {
+        pm2_5: ia.pm25 ? ia.pm25.v : (ia.pm2_5 ? ia.pm2_5.v : null),
+        pm10: ia.pm10 ? ia.pm10.v : null
+      };
+    })() : {pm2_5: null, pm10: null});
+
+    const aqi_category = data.aqi_category || (typeof aqi_value === "number" ? (aqi_value <=50 ? "Good" : aqi_value<=100 ? "Moderate" : aqi_value<=150 ? "Unhealthy for SG" : aqi_value<=200 ? "Unhealthy" : aqi_value<=300 ? "Very Unhealthy" : "Hazardous") : "N/A");
+    const resolved_via = data.resolved_via || "unknown";
+    const locationLabel = displayCityName ? displayCityName : "Current location";
+
+    // Update main aqi-status (current)
+    const aqiBox = document.getElementById("aqi-status");
+    if (aqiBox) {
+      // Build small HTML showing current + predicted (if available)
+      let predictedHTML = "";
+      if (show_prediction && predicted_aqi !== null && !isNaN(predicted_aqi)) {
+        predictedHTML = `<br>🔮 Tomorrow (predicted): <strong id="predicted_aqi_value">${Number(predicted_aqi).toFixed(1)}</strong>`;
+      } else if (data.forecast && Array.isArray(data.forecast) && data.forecast.length > 1) {
+        const day1 = data.forecast[1];
+        const possible = day1 && (day1.Predicted_AQI || day1.predicted_aqi || day1.predicted || day1.aqi);
+        if (possible !== undefined && possible !== null && !isNaN(possible)) {
+          predictedHTML = `<br>🔮 Tomorrow (predicted from forecast): <strong id="predicted_aqi_value">${Number(possible).toFixed(1)}</strong>`;
+        }
+      }
+
+      aqiBox.innerHTML =
+        `📍 <strong>${locationLabel}</strong><br>
+         🌍 AQI: <strong id="current_aqi_value">${aqi_value !== null ? aqi_value : 'N/A'}</strong> (${aqi_category})${predictedHTML}<br>
+         PM2.5: ${components.pm2_5 !== undefined ? components.pm2_5 : 'N/A'} µg/m³ | PM10: ${components.pm10 !== undefined ? components.pm10 : 'N/A'} µg/m³
+         <div style="font-size:0.8em;color:#666">resolved_via: ${resolved_via}</div>`;
+    }
+
+    // Update hidden field used by symptom form
+    if (document.getElementById('hidden_aqi')) {
+      document.getElementById('hidden_aqi').value = aqi_value !== null ? aqi_value : '';
+    }
+
+    // If this is a city search, show concise search-result box (current + predicted)
+    if (displayCityName) {
+      const sr = document.getElementById("search-result");
+      sr.style.display = "block";
+      let shtml = `<strong>${displayCityName}</strong><br>🌍 AQI: <strong>${aqi_value !== null ? aqi_value : 'N/A'}</strong> (${aqi_category})`;
+      if (show_prediction && predicted_aqi !== null && !isNaN(predicted_aqi)) {
+        shtml += `<br>🔮 Tomorrow (predicted): <strong>${Number(predicted_aqi).toFixed(1)}</strong>`;
+      } else if (data.forecast && Array.isArray(data.forecast) && data.forecast.length > 1) {
+        const day1 = data.forecast[1];
+        const possible = day1 && (day1.Predicted_AQI || day1.predicted_aqi || day1.predicted || day1.aqi);
+        if (possible !== undefined && possible !== null && !isNaN(possible)) {
+          shtml += `<br>🔮 Tomorrow (predicted from forecast): <strong>${Number(possible).toFixed(1)}</strong>`;
+        }
+      }
+      shtml += `<div style="font-size:0.8em;color:#666">resolved_via: ${resolved_via}</div>`;
+      sr.innerHTML = shtml;
+    }
+
+    // Populate forecast table if present
+    if (data.forecast && Array.isArray(data.forecast) && data.forecast.length > 0) {
+      const tbody = document.querySelector("#forecast-table tbody");
+      tbody.innerHTML = "";
+      data.forecast.forEach(f => {
+        const tr = document.createElement("tr");
+        const day = f.Day || f.day || f.date || f[0] || "Day";
+        const val = (f.Predicted_AQI !== undefined) ? f.Predicted_AQI : (f.predicted_aqi !== undefined ? f.predicted_aqi : (f.aqi !== undefined ? f.aqi : NaN));
+        tr.innerHTML = `<td>${day}</td><td>${isNaN(val) ? 'N/A' : Number(val).toFixed(1)}</td>`;
+        tbody.appendChild(tr);
+      });
+      document.getElementById("forecast-section").style.display = "block";
+    } else {
+      document.getElementById("forecast-section").style.display = "none";
+    }
+
+    return data;
+  } catch (err) {
+    console.error("fetch /get_aqi failed:", err);
+    document.getElementById("aqi-status").innerHTML = `❌ Network error fetching AQI`;
+    if (displayCityName) {
+      document.getElementById("search-result").style.display = "block";
+      document.getElementById("search-result").innerHTML = `❌ Network error fetching AQI`;
+    }
+    return null;
+  }
+}
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    // initialAqi comes from server (app.py sets last_aqi into template context).
+    const initialAqi = {{ last_aqi|tojson }};
+
+    let userLat = null;
+    let userLon = null;
+
+    // Try geolocation first (to show local AQI)
+    if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+            function (position) {
+                userLat = position.coords.latitude;
+                userLon = position.coords.longitude;
+
+                // set hidden lat/lon fields (these are used when saving symptoms)
+                const latInput = document.getElementById('hidden_lat');
+                const lonInput = document.getElementById('hidden_lon');
+                if (latInput) latInput.value = userLat;
+                if (lonInput) lonInput.value = userLon;
+
+                // Fetch current AQI + forecast
+                handleGetAqiFetch(fetch(`/get_aqi?lat=${userLat}&lon=${userLon}`), null).then(() => {
+                    // Replace "Current location" with resolved name if possible (best-effort)
+                    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${userLat}&lon=${userLon}&format=json`)
+                        .then(res => res.json())
+                        .then(loc => {
+                            const addr = loc.address || {};
+                            const locationName = addr.city || addr.town || addr.village || addr.state || "Unknown Location";
+                            const box = document.getElementById("aqi-status");
+                            if (box) {
+                                box.innerHTML = box.innerHTML.replace("Current location", locationName);
+                            }
+                        })
+                        .catch(() => {});
+                });
+            },
+            function () {
+                // geolocation denied -> show server-provided last_aqi if available
+                if (initialAqi !== null) {
+                    document.getElementById("aqi-status").innerHTML =
+                        `📍 <strong>Last known</strong><br> 🌍 AQI: <strong id="current_aqi_value">${initialAqi}</strong>`;
+                    document.getElementById('hidden_aqi').value = initialAqi;
+                } else {
+                    document.getElementById("aqi-status").innerHTML = `❌ Location access denied.`;
+                }
+            }
+        );
+    } else {
+        // no geolocation api -> show initialAqi if available
+        if (initialAqi !== null) {
+            document.getElementById("aqi-status").innerHTML =
+                `📍 <strong>Last known</strong><br> 🌍 AQI: <strong id="current_aqi_value">${initialAqi}</strong>`;
+            document.getElementById('hidden_aqi').value = initialAqi;
+        }
+    }
+
+    // Search AQI for entered city
+    document.getElementById("search-btn").addEventListener("click", function () {
+        const city = document.getElementById("city-search").value.trim();
+        if (!city) {
+            alert("Please enter a city name");
+            return;
+        }
+        handleGetAqiFetch(fetch(`/get_aqi?city=${encodeURIComponent(city)}`), city);
+    });
+
+    // ===================== Symptoms & Form Handling =====================
+    function loadMySymptoms() {
+        fetch("/my_symptoms")
+            .then(res => res.json())
+            .then(data => {
+                const tbody = document.getElementById("symptomTableBody");
+                tbody.innerHTML = "";
+                if (data.symptoms && data.symptoms.length > 0) {
+                    data.symptoms.forEach(sym => {
+                        const tr = document.createElement("tr");
+                        tr.innerHTML = `
+                            <td>${new Date(sym.timestamp).toLocaleString()}</td>
+                            <td>${sym.description}</td>
+                            <td>${sym.severity}</td>
+                            <td>${sym.lat && sym.lon ? sym.lat.toFixed(3) + ", " + sym.lon.toFixed(3) : 'N/A'}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="4">No symptoms logged yet.</td></tr>`;
+                }
+            });
+    }
+    loadMySymptoms();
+
+    // Helper: read numeric AQI from the aqi-status/current_aqi_value element
+    function readCurrentAqi() {
+        const hiddenAqi = document.getElementById('hidden_aqi');
+        if (hiddenAqi && hiddenAqi.value !== '') {
+            const v = parseFloat(hiddenAqi.value);
+            return isNaN(v) ? 0 : v;
+        }
+        let el = document.getElementById('current_aqi_value');
+        if (!el) {
+            const text = document.getElementById('aqi-status').textContent || '';
+            const m = text.match(/AQI[:\s]*([0-9]{1,4})/i);
+            return m ? Number(m[1]) : 0;
+        }
+        const val = parseFloat(el.textContent.trim());
+        return isNaN(val) ? 0 : val;
+    }
+
+    // Suggestion mapper
+    function suggestionFromPrediction(label, prob, aqi) {
+      const p = (prob || 0) * 100;
+      const l = ('' + label).toLowerCase();
+      if (l.includes('toler') || l.includes('safe') || l.includes('ok')) {
+        return {
+          className: 'alert-success',
+          text: `Model predicts the patient can tolerate current AQI (${aqi}). Confidence ${p.toFixed(1)}%. Continue usual care; reduce outdoor exposure if symptoms worsen.`
+        };
+      } else if (l.includes('not') || l.includes('avoid') || l.includes('risk') || l.includes('unsafe')) {
+        return {
+          className: 'alert-danger',
+          text: `Model predicts the patient may NOT tolerate current AQI (${aqi}). Confidence ${p.toFixed(1)}%. Recommend: stay indoors, use air purifier/mask, seek medical advice if symptoms increase.`
+        };
+      } else {
+        if (aqi >= 200) {
+          return { className: 'alert-danger', text: `AQI is very high (${aqi}). Limit outdoor activity, seek care if breathing worsens.`};
+        } else if (aqi >= 151) {
+          return { className: 'alert-warning', text: `AQI is unhealthy (${aqi}). Take precautions (mask, reduce exertion).`};
+        } else {
+          return { className: 'alert-info', text: `Prediction: ${label}. Confidence ${p.toFixed(1)}%.`};
+        }
+      }
+    }
+
+    // Submit symptom & get suggestion
+    document.getElementById("symptomForm").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const submitBtn = document.getElementById('submitSymptomBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Processing...';
+
+        // Build payload (severity values are numeric strings from selects)
+        const payload = {
+            disease: document.getElementById('disease').value,
+            cough_severity: document.getElementById('cough').value,
+            wheezing_severity: document.getElementById('wheezing').value,
+            breathlessness_severity: document.getElementById('breath').value,
+            chest_pain_severity: document.getElementById('chest').value,
+            throat_irritation_severity: document.getElementById('throat').value,
+            fatigue_severity: document.getElementById('fatigue').value,
+            aqi: readCurrentAqi(),
+            description: document.getElementById('description').value || ''
+        };
+
+        try {
+            // Call ML API for prediction
+            const resp = await fetch('/api/predict', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+
+            const data = await resp.json();
+            if (!resp.ok) {
+                throw data;
+            }
+
+            // robust reading of backend response shapes
+            let pred = null;
+            let prob = null;
+
+            if (data.prediction !== undefined) {
+                pred = data.prediction;
+                prob = data.probability !== undefined ? data.probability : (data.probabilities !== undefined ? (Array.isArray(data.probabilities)? data.probabilities[0]: data.probabilities) : null);
+            } else if (data.predictions !== undefined) {
+                pred = Array.isArray(data.predictions) ? data.predictions[0] : data.predictions;
+                prob = Array.isArray(data.probabilities) ? data.probabilities[0] : data.probabilities;
+            } else if (data.success && data.prediction !== undefined) {
+                pred = data.prediction;
+                prob = data.probability || null;
+            } else if (data.ok && data.prediction !== undefined) {
+                pred = data.prediction;
+                prob = data.probability || null;
+            } else if (data instanceof Object && Object.keys(data).length === 1) {
+                pred = data[Object.keys(data)[0]];
+            } else {
+                pred = JSON.stringify(data);
+            }
+
+            // convert numeric strings to numbers where possible
+            if (pred !== null && typeof pred !== "number") {
+                const maybeNum = Number(pred);
+                if (!Number.isNaN(maybeNum)) pred = maybeNum;
+            }
+            if (prob !== null && typeof prob !== "number") {
+                const maybeNum = Number(prob);
+                if (!Number.isNaN(maybeNum)) prob = maybeNum;
+            }
+
+            const labelMap = {
+                1: "Can tolerate",
+                0: "Cannot tolerate",
+            };
+            const friendlyLabel = (pred !== null && pred in labelMap) ? labelMap[pred] : (pred !== null ? String(pred) : "Unknown");
+
+            const suggestion = suggestionFromPrediction(friendlyLabel, prob, payload.aqi);
+            document.getElementById('pred_label').textContent = `Prediction: ${friendlyLabel}`;
+            document.getElementById('pred_prob').textContent = prob != null ? `Confidence: ${(prob*100).toFixed(1)}%` : '';
+            const sugEl = document.getElementById('pred_suggestion');
+            sugEl.className = 'alert ' + suggestion.className;
+            sugEl.textContent = suggestion.text;
+            document.getElementById('predictionResult').style.display = 'block';
+
+            // Save into existing /log_symptom endpoint so history remains consistent
+            try {
+                const saveResp = await fetch('/log_symptom', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        description: payload.description || `Symptom check — model predicted: ${friendlyLabel} (prob ${(prob||0).toFixed(3)})`,
+                        severity: 'moderate',
+                        lat: document.getElementById('hidden_lat').value || null,
+                        lon: document.getElementById('hidden_lon').value || null,
+                        aqi: payload.aqi
+                    })
+                });
+                const saveData = await saveResp.json();
+                if (saveResp.ok && saveData.status === 'ok') {
+                    document.getElementById("symptom-message").innerHTML =
+                        `<div class="alert alert-success">✅ Symptom & prediction saved to history.</div>`;
+                    loadMySymptoms();
+                } else {
+                    document.getElementById("symptom-message").innerHTML =
+                        `<div class="alert alert-warning">⚠️ Prediction returned but symptom save failed: ${saveData.error || 'unknown'}</div>`;
+                }
+            } catch (err) {
+                console.warn('Failed to save symptom:', err);
+                document.getElementById("symptom-message").innerHTML =
+                    `<div class="alert alert-warning">⚠️ Prediction shown but failed to save symptom locally.</div>`;
+            }
+
+        } catch (err) {
+            console.error('Prediction error', err);
+            document.getElementById('pred_label').textContent = 'Error';
+            document.getElementById('pred_prob').textContent = '';
+            const sugEl = document.getElementById('pred_suggestion');
+            sugEl.className = 'alert alert-danger';
+            sugEl.textContent = 'Could not get prediction — try again later.';
+            document.getElementById('predictionResult').style.display = 'block';
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit & Get Suggestion';
+        }
+    });
+
+    // other helpers and existing functionality remain (chart rendering etc.)
+});
+</script>
+{% endblock %}

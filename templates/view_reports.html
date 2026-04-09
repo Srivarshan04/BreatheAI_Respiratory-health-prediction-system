@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>View Health Reports</title>
+</head>
+<body>
+    <h2>Your Health Reports</h2>
+
+    {% if reports %}
+        <ul>
+            {% for report in reports %}
+                <li>
+                    <strong>{{ report.date.strftime("%Y-%m-%d %H:%M") }}:</strong> 
+                    {{ report.notes }}
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No reports found. You can log one <a href="{{ url_for('log_health') }}">here</a>.</p>
+    {% endif %}
+
+    <br>
+    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+</body>
+</html>

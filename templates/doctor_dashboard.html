@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+{% block title %}Doctor Dashboard{% endblock %}
+{% block content %}
+<div class="card shadow p-4">
+    <h2 class="mb-3">Welcome, Dr. {{ user.username }} 👋</h2>
+    <p><strong>Role:</strong> Doctor</p>
+
+    <!-- Top section: AQI + Search on left, Notifications on right -->
+    <div class="row align-items-start">
+        <div class="col-md-7">
+            <!-- AQI Status -->
+            <div id="aqi-status" class="alert alert-info mb-3">
+                🌍 Fetching AQI data for your location...
+            </div>
+
+            <!-- Search AQI by City -->
+            <div class="input-group mb-3" style="max-width: 400px;">
+                <input type="text" id="city-search" placeholder="Enter city name" class="form-control" aria-label="City name">
+                <button id="search-btn" class="btn btn-primary">Search AQI</button>
+            </div>
+            <div id="search-result" class="alert alert-secondary" style="display:none;"></div>
+        </div>
+
+        <!-- Notifications -->
+        <div class="col-md-5">
+            <div class="p-3 bg-white shadow rounded">
+                <h5>🔔 Notifications</h5>
+                <ul class="list-unstyled mt-3" id="notificationsList" style="max-height: 200px; overflow-y: auto;">
+                    <li>⚠️ Patient John reported breathing issues (AQI 150)</li>
+                    <li>✅ Patient Maria's AQI exposure improved this week</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Health Advisory -->
+    <div class="alert alert-warning mt-4">
+        💡 Advisory: If AQI &gt; 100, advise sensitive patients to limit outdoor exposure and consider medication review.
+    </div>
+
+    <!-- Patient List Table -->
+    <h4 class="mt-4">👥 Patient List</h4>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Patient</th>
+                <th>Last Symptom</th>
+                <th>Severity</th>
+                <th>Location</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="patientTableBody">
+            <tr><td colspan="5">Loading...</td></tr>
+        </tbody>
+    </table>
+
+    <!-- AQI Graph -->
+    <h5 class="mt-4">📊 AQI Trend (Past 7 Days)</h5>
+    <canvas id="aqiChart" height="100"></canvas>
+
+    <!-- Single Logout Button -->
+    <div class="mt-4">
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">🚪 Logout</a>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const OPENWEATHER_API_KEY = "yourapikey";
+
+    function mapOWAQI(ow) {
+        switch (ow) {
+            case 1: return { value: 50, category: "Good" };
+            case 2: return { value: 100, category: "Fair" };
+            case 3: return { value: 150, category: "Moderate" };
+            case 4: return { value: 200, category: "Poor" };
+            case 5: return { value: 300, category: "Very Poor" };
+            default: return { value: null, category: "Unknown" };
+        }
+    }
+
+    function setAQIDisplay(place, aqiValue, aqiCategory, components) {
+        document.getElementById("aqi-status").innerHTML =
+            `📍 <strong>${place}</strong><br>
+             🌍 AQI: <strong>${aqiValue}</strong> (${aqiCategory})<br>
+             PM2.5: ${components.pm2_5 ?? "N/A"} µg/m³ | PM10: ${components.pm10 ?? "N/A"} µg/m³`;
+    }
+
+    async function fetchAqiViaBackend(lat, lon) {
+        try {
+            const res = await fetch(`/get_aqi?lat=${lat}&lon=${lon}`);
+            const json = await res.json();
+            if (!json || json.error) throw new Error("backend-fail");
+            const placeResp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+            const placeJson = await placeResp.json();
+            const addr = placeJson.address || {};
+            const place = addr.suburb || addr.neighbourhood || addr.village || addr.town || addr.city_district || addr.city || addr.state || "Nearby location";
+            setAQIDisplay(place, json.aqi_value ?? json.aqi_index ?? json.aqi, json.aqi_category ?? json.aqi_text ?? "", json.components ?? {});
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async function fetchAqiViaOpenWeather(lat, lon) {
+        try {
+            const res = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}`);
+            const json = await res.json();
+            if (!json || !json.list || !json.list.length) throw new Error("ow-no-data");
+            const owAqi = json.list[0].main.aqi;
+            const mapped = mapOWAQI(owAqi);
+            const components = json.list[0].components || {};
+            const placeResp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+            const placeJson = await placeResp.json();
+            const addr = placeJson.address || {};
+            const place = addr.suburb || addr.neighbourhood || addr.village || addr.town || addr.city_district || addr.city || addr.state || "Nearby location";
+            setAQIDisplay(place, mapped.value, mapped.category, components);
+            return true;
+        } catch (e) {
+            document.getElementById("aqi-status").innerHTML = `❌ Error fetching AQI`;
+            return false;
+        }
+    }
+
+    async function updateAQIAndChart(lat, lon) {
+        const okBackend = await fetchAqiViaBackend(lat, lon);
+        if (!okBackend) {
+            await fetchAqiViaOpenWeather(lat, lon);
+        }
+
+        const today = new Date();
+        const days = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date(today);
+            d.setDate(today.getDate() - i);
+            const start = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000);
+            const end = start + 86399;
+            days.push({ start, end, label: d.toLocaleDateString(undefined, { weekday: 'short' }) });
+        }
+
+        const aqiValues = await Promise.all(days.map(async (day) => {
+            try {
+                const h = await fetch(`https://api.openweathermap.org/data/2.5/air_pollution/history?lat=${lat}&lon=${lon}&start=${day.start}&end=${day.end}&appid=${OPENWEATHER_API_KEY}`);
+                const hj = await h.json();
+                if (hj && hj.list && hj.list.length > 0) {
+                    const ow = hj.list[0].main.aqi;
+                    return mapOWAQI(ow).value;
+                }
+                return null;
+            } catch (e) {
+                return null;
+            }
+        }));
+
+        const ctx = document.getElementById('aqiChart').getContext('2d');
+        if (window._doctorAqiChart) {
+            window._doctorAqiChart.destroy();
+            window._doctorAqiChart = null;
+        }
+        window._doctorAqiChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: days.map(d => d.label),
+                datasets: [{
+                    label: 'AQI',
+                    data: aqiValues,
+                    borderColor: 'blue',
+                    backgroundColor: 'rgba(0, 0, 255, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: { responsive: true }
+        });
+    }
+
+    if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+            function (position) {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                updateAQIAndChart(lat, lon);
+                setInterval(() => updateAQIAndChart(lat, lon), 10000);
+            },
+            function () {
+                document.getElementById("aqi-status").innerHTML = `❌ Location access denied.`;
+            }, { enableHighAccuracy: true, timeout: 10000 }
+        );
+    } else {
+        document.getElementById("aqi-status").innerHTML = `❌ Geolocation not supported.`;
+    }
+
+    document.getElementById("search-btn").addEventListener("click", function () {
+        const city = document.getElementById("city-search").value.trim();
+        if (!city) {
+            alert("Please enter a city name");
+            return;
+        }
+        fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(city)}&format=json&limit=1`)
+            .then(res => res.json())
+            .then(loc => {
+                if (!loc || !loc.length) {
+                    const result = document.getElementById("search-result");
+                    result.style.display = "block";
+                    result.innerHTML = "❌ City not found.";
+                    return;
+                }
+                const lat = loc[0].lat;
+                const lon = loc[0].lon;
+                fetch(`/get_aqi?lat=${lat}&lon=${lon}`)
+                    .then(r => r.json())
+                    .then(json => {
+                        const result = document.getElementById("search-result");
+                        if (json && !json.error) {
+                            result.style.display = "block";
+                            result.innerHTML =
+                                `📍 <strong>${city}</strong><br>
+                                 🌍 AQI: <strong>${json.aqi_value ?? json.aqi_index ?? json.aqi}</strong> (${json.aqi_category ?? json.aqi_text ?? ""})<br>
+                                 PM2.5: ${json.components?.pm2_5 ?? "N/A"} µg/m³ | PM10: ${json.components?.pm10 ?? "N/A"} µg/m³`;
+                        } else {
+                            fetch(`https://api.openweathermap.org/data/2.5/air_pollution?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}`)
+                                .then(r => r.json())
+                                .then(ow => {
+                                    if (ow && ow.list && ow.list.length) {
+                                        const mapped = mapOWAQI(ow.list[0].main.aqi);
+                                        const comps = ow.list[0].components || {};
+                                        result.style.display = "block";
+                                        result.innerHTML =
+                                            `📍 <strong>${city}</strong><br>
+                                             🌍 AQI: <strong>${mapped.value}</strong> (${mapped.category})<br>
+                                             PM2.5: ${comps.pm2_5 ?? "N/A"} µg/m³ | PM10: ${comps.pm10 ?? "N/A"} µg/m³`;
+                                    } else {
+                                        result.style.display = "block";
+                                        result.innerHTML = "❌ AQI data not found for this city.";
+                                    }
+                                })
+                                .catch(() => {
+                                    result.style.display = "block";
+                                    result.innerHTML = "❌ Error fetching AQI for this city.";
+                                });
+                        }
+                    })
+                    .catch(() => {
+                        const result = document.getElementById("search-result");
+                        result.style.display = "block";
+                        result.innerHTML = "❌ Error fetching AQI for this city.";
+                    });
+            });
+    });
+
+    function loadPatients() {
+        fetch("/list_patients")
+            .then(res => res.json())
+            .then(data => {
+                const tbody = document.getElementById("patientTableBody");
+                tbody.innerHTML = "";
+                if (data.patients && data.patients.length > 0) {
+                    data.patients.forEach(pt => {
+                        const tr = document.createElement("tr");
+                        tr.innerHTML = `
+                            <td>${pt.username}</td>
+                            <td>${pt.last_symptom ?? "N/A"}</td>
+                            <td>${pt.severity ?? "N/A"}</td>
+                            <td>${(pt.lat && pt.lon) ? pt.lat.toFixed(3) + ", " + pt.lon.toFixed(3) : (pt.location || 'N/A')}</td>
+                            <td>
+                                <a href="/chat_with_patient/${pt.id}" class="btn btn-sm btn-primary">Chat</a>
+                                <a href="/patient_reports/${pt.id}" class="btn btn-sm btn-secondary">View Reports</a>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                } else {
+                    tbody.innerHTML = `<tr><td colspan="5">No patients found.</td></tr>`;
+                }
+            })
+            .catch(() => {
+                const tbody = document.getElementById("patientTableBody");
+                tbody.innerHTML = `<tr><td colspan="5">Error loading patients.</td></tr>`;
+            });
+    }
+    loadPatients();
+});
+</script>
+{% endblock %}

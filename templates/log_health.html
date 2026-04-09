@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Log Health</title>
+</head>
+<body>
+    <h2>Log Your Health Status</h2>
+    <form method="POST">
+        <label for="notes">Notes:</label><br>
+        <textarea name="notes" rows="5" cols="50" required></textarea><br><br>
+        <button type="submit">Save Log</button>
+    </form>
+    <br>
+    <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+</body>
+</html>

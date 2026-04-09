@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Chat with {{ patient.username }}{% endblock %}
+{% block content %}
+<div class="card p-3">
+    <h3>💬 Chat with {{ patient.username }}</h3>
+    <div id="chat-box" style="height:300px; overflow-y:auto; border:1px solid #ccc; padding:10px; background:#f9f9f9;">
+        <p><em>No messages yet.</em></p>
+    </div>
+    <div class="input-group mt-3">
+        <input type="text" id="message-input" class="form-control" placeholder="Type a message...">
+        <button id="send-btn" class="btn btn-primary">Send</button>
+    </div>
+</div>
+
+<script>
+document.getElementById("send-btn").addEventListener("click", function(){
+    let msg = document.getElementById("message-input").value.trim();
+    if(!msg) return;
+    let box = document.getElementById("chat-box");
+    let p = document.createElement("p");
+    p.textContent = "You: " + msg;
+    box.appendChild(p);
+    document.getElementById("message-input").value = "";
+    box.scrollTop = box.scrollHeight;
+});
+</script>
+{% endblock %}
